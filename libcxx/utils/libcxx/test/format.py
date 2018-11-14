@@ -205,8 +205,7 @@ class LibcxxTestFormat(object):
             for retry_count in range(max_retry):
                 try:
                     cmd, out, err, rc = self.executor.run(exec_path, [exec_path],
-                                                      local_cwd, data_files,
-                                                      env)
+                                                      local_cwd, data_files, env)
                 except libcxx.util.ExecuteCommandTimeoutException as e:
                     report = e.msg + "\n" + libcxx.util.makeReport(e.command, e.out, e.err, e.exitCode)
                     report = "Compiled With: %s\n%s" % (compile_cmd, report)
