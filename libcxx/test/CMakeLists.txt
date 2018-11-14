@@ -40,6 +40,7 @@ pythonize_bool(LIBCXX_HAS_ATOMIC_LIB)
 pythonize_bool(LIBCXX_HAVE_CXX_ATOMICS_WITH_LIB)
 pythonize_bool(LIBCXX_BUILD_EXTERNAL_THREAD_LIBRARY)
 pythonize_bool(LIBCXX_DEBUG_BUILD)
+pythonize_bool(LIBCXX_RUN_LONG_TESTS)
 
 # By default, for non-standalone builds, libcxx and libcxxabi share a library
 # directory.
@@ -69,6 +70,12 @@ if (LIBCXX_BUILD_EXTERNAL_THREAD_LIBRARY)
 endif()
 
 if (LIBCXX_INCLUDE_TESTS)
+  if (LIBCXX_TARGET_INFO MATCHES "CheriBSDRemoteTI")
+    message(STATUS "Test suite to run on CheriBSD -> max one thread possible")
+    set(LIBCXX_LIT_EXTRA_ARGS "-j1")
+  else()
+    set(LIBCXX_LIT_EXTRA_ARGS)
+  endif()
   include(AddLLVM) # for configure_lit_site_cfg and add_lit_testsuit
 
   configure_lit_site_cfg(
@@ -78,7 +85,8 @@ if (LIBCXX_INCLUDE_TESTS)
   add_lit_testsuite(check-cxx
     "Running libcxx tests"
     ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS cxx ${LIBCXX_TEST_DEPS})
+    DEPENDS cxx ${LIBCXX_TEST_DEPS}
+    ARGS ${LIBCXX_LIT_EXTRA_ARGS})
 
   add_custom_target(check-libcxx DEPENDS check-cxx)
 endif()

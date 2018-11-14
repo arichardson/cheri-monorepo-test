@@ -140,6 +140,33 @@ public:
     FPC_Fast
   };
 
+  enum CheriUIntCapMode {
+    UIntCap_Offset, /// Use the capability the offset for operations on
+                    /// uintcap_t (GC-friendlier than vaddr)
+    UIntCap_Addr, /// Use the capability the offset for operations on uintcap_t
+                  /// (More C compatible than offset)
+  };
+
+  // TODO: this should probably be flags
+#if 0
+    CBM_ReferencesAggressive, /// (unused for now, might set more bounds)
+    CBM_NestedStructs
+    CBM_NonArrayObjectMembers, /// also set bounds on non-array object members
+    CBM_AllObjectMembers,     /// also set bounds on non-array object members
+    CBM_NonzeroArrayIndexes, /// also set bounds &array[n] if n != 0
+    CBM_AllArrayIndexes,     /// also set bounds on all non-annoated array index
+#endif
+  enum CheriBoundsMode {
+    CBM_Conservative, /// Only set bounds for stack allocations (safe)
+    CBM_References,   /// Also set bounds for C++ references to scalar types and
+                      /// references to final without vtables or flexible arrays
+    CBM_SubObjectsSafe, /// in addition to references also set bounds for
+                        /// pointers to subobjects (but only for those where we
+                        /// assume that it is safe to do so)
+    CBM_Aggressive, /// set bounds for anything that is not definitively unsafe
+                    /// or annotated as not wanting bounds
+  };
+
   // TODO: merge FEnvAccessModeKind and FPContractModeKind
   enum FEnvAccessModeKind {
     FEA_Off,
@@ -247,6 +274,14 @@ public:
 
   bool isCompatibleWithMSVC(MSVCMajorVersion MajorVersion) const {
     return MSCompatibilityVersion >= MajorVersion * 10000000U;
+  }
+
+  bool cheriUIntCapUsesAddr() const {
+    return getCheriUIntCap() == UIntCap_Addr;
+  }
+
+  bool cheriUIntCapUsesOffset() const {
+    return getCheriUIntCap() == UIntCap_Offset;
   }
 
   /// Reset all of the options that are not considered when building a

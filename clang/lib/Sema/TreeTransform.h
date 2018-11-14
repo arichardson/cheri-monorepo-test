@@ -12285,7 +12285,7 @@ template<typename Derived>
 QualType TreeTransform<Derived>::RebuildPointerType(QualType PointeeType,
                                                     SourceLocation Star) {
   return SemaRef.BuildPointerType(PointeeType, Star,
-                                  getDerived().getBaseEntity());
+                                  getDerived().getBaseEntity(), nullptr);
 }
 
 template<typename Derived>

@@ -922,6 +922,14 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
     }
   }
 
+  if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D)) {
+    auto *FT =
+      dyn_cast<FunctionType>(FD->getType().getDesugaredType(getContext()));
+    if (FT && (FT->getCallConv() == CC_CHERICCallee))
+      if (auto *ClsAttr = FD->getAttr<CHERIMethodClassAttr>())
+        CGM.EmitSandboxDefinedMethod(ClsAttr->getDefaultClass()->getName(),
+                                     FD->getName(), Fn);
+  }
   // Add no-jump-tables value.
   Fn->addFnAttr("no-jump-tables",
                 llvm::toStringRef(CGM.getCodeGenOpts().NoUseJumpTables));
@@ -958,6 +966,19 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
       }
     }
   }
+
+  if (D && D->hasAttr<SensitiveAttr>()) {
+    // Sensitive needs to be a function attribute, not metadata
+#if 0
+    llvm::LLVMContext &Context = getLLVMContext();
+    llvm::Value *attrMDArgs[] = { Fn };
+    llvm::MDNode *FNNode= llvm::MDNode::get(Context, attrMDArgs);
+    llvm::NamedMDNode *OpenCLKernelMetadata =
+      CGM.getModule().getOrInsertNamedMetadata("cheri.sensitive.functions");
+    OpenCLKernelMetadata->addOperand(FNNode);
+#endif
+  }
+
 
   // If we're checking nullability, we need to know whether we can check the
   // return value. Initialize the flag to 'true' and refine it in EmitParmDecl.
@@ -1824,7 +1845,7 @@ CodeGenFunction::EmitNullInitialization(Address DestPtr, QualType Ty) {
                                NullConstant, Twine());
     CharUnits NullAlign = DestPtr.getAlignment();
     NullVariable->setAlignment(NullAlign.getQuantity());
-    Address SrcPtr(Builder.CreateBitCast(NullVariable, Builder.getInt8PtrTy()),
+    Address SrcPtr(Builder.CreatePointerBitCastOrAddrSpaceCast(NullVariable, CGM.Int8PtrTy),
                    NullAlign);
 
     if (vla) return emitNonZeroVLAInit(*this, Ty, DestPtr, SrcPtr, SizeVal);
@@ -1849,7 +1870,11 @@ llvm::BlockAddress *CodeGenFunction::GetAddrOfLabel(const LabelDecl *L) {
 
   // Make sure the indirect branch includes all of the address-taken blocks.
   IndirectBranch->addDestination(BB);
-  return llvm::BlockAddress::get(CurFn, BB);
+  auto Result = llvm::BlockAddress::get(CurFn, BB);
+  assert(Result->getType()->getPointerAddressSpace() ==
+             CGM.getDataLayout().getProgramAddressSpace() &&
+         "Blockaddress not in program AS?");
+  return Result;
 }
 
 llvm::BasicBlock *CodeGenFunction::GetIndirectGotoBlock() {

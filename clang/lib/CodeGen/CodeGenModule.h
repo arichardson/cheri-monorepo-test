@@ -639,6 +639,15 @@ public:
   const llvm::DataLayout &getDataLayout() const {
     return TheModule.getDataLayout();
   }
+  // This is the same as DataLayout::getProgramAddressSpace() except that it
+  // also includes a hack for the legacy CHERI ABI: functions must still be in
+  // address space 0 even though all code pointers are in AS200
+  unsigned getFunctionAddrSpace() const {
+    if (LLVM_UNLIKELY(getTarget().areAllPointersCapabilities() &&
+                      !llvm::MCTargetOptions::cheriUsesCapabilityTable()))
+      return 0;
+    return getDataLayout().getProgramAddressSpace();
+  }
   const TargetInfo &getTarget() const { return Target; }
   const llvm::Triple &getTriple() const { return Target.getTriple(); }
   bool supportsCOMDAT() const;
@@ -650,6 +659,14 @@ public:
   bool shouldUseTBAA() const { return TBAA != nullptr; }
 
   const TargetCodeGenInfo &getTargetCodeGenInfo();
+
+  unsigned getAddressSpaceForType(QualType T);
+
+  unsigned getTargetAddressSpace(LangAS AddrSpace);
+
+  inline unsigned getTargetAddressSpace(Qualifiers Q) {
+    return getTargetAddressSpace(Q.getAddressSpace());
+  }
 
   CodeGenTypes &getTypes() { return Types; }
 
@@ -993,7 +1010,8 @@ public:
                         llvm::AttributeList ExtraAttrs = llvm::AttributeList());
   /// Create a new runtime global variable with the specified type and name.
   llvm::Constant *CreateRuntimeVariable(llvm::Type *Ty,
-                                        StringRef Name);
+                                        StringRef Name,
+                                        unsigned AddressSpace = 0);
 
   ///@name Custom Blocks Runtime Interfaces
   ///@{
@@ -1011,7 +1029,8 @@ public:
   // Make sure that this type is translated.
   void UpdateCompletedType(const TagDecl *TD);
 
-  llvm::Constant *getMemberPointerConstant(const UnaryOperator *e);
+  llvm::Constant *getMemberPointerConstant(const UnaryOperator *e,
+                                           CodeGenFunction *CGF);
 
   /// Emit type info if type of an expression is a variably modified
   /// type. Also emit proper debug info for cast types.
@@ -1133,6 +1152,13 @@ public:
   void setFunctionLinkage(GlobalDecl GD, llvm::Function *F) {
     F->setLinkage(getFunctionLinkage(GD));
   }
+
+  /// Emit the metadata for a required method in a CHERI sandbox.
+  /// The return value is the address of the method number.
+  llvm::Value *EmitSandboxRequiredMethod(StringRef, StringRef);
+
+  /// Emit the metadata for a defined method in a CHERI sandbox
+  void EmitSandboxDefinedMethod(StringRef, StringRef, llvm::Function *);
 
   /// Return the appropriate linkage for the vtable, VTT, and type information
   /// of the given class.
@@ -1286,6 +1312,8 @@ public:
   /// \param QT is the clang QualType of the null pointer.
   llvm::Constant *getNullPointer(llvm::PointerType *T, QualType QT);
 
+  llvm::PointerType* getPointerInDefaultAS(llvm::Type* T);
+
 private:
   llvm::Constant *GetOrCreateLLVMFunction(
       StringRef MangledName, llvm::Type *Ty, GlobalDecl D, bool ForVTable,
@@ -1336,11 +1364,13 @@ private:
   /// Emit the function that destroys C++ globals.
   void EmitCXXGlobalDtorFunc();
 
+public:
   /// Emit the function that initializes the specified global (if PerformInit is
   /// true) and registers its destructor.
   void EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
                                     llvm::GlobalVariable *Addr,
                                     bool PerformInit);
+private:
 
   void EmitPointerToInitFunc(const VarDecl *VD, llvm::GlobalVariable *Addr,
                              llvm::Function *InitFunc, InitSegAttr *ISA);

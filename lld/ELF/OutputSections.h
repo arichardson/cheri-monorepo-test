@@ -117,7 +117,7 @@ private:
   std::vector<uint8_t> ZDebugHeader;
   llvm::SmallVector<char, 1> CompressedData;
 
-  uint32_t getFiller();
+  llvm::Optional<uint32_t> getFiller();
 };
 
 int getPriority(StringRef S);

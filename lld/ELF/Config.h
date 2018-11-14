@@ -37,6 +37,8 @@ enum ELFKind {
 // For --build-id.
 enum class BuildIdKind { None, Fast, Md5, Sha1, Hexstring, Uuid };
 
+enum class CapRelocsMode { Legacy, ElfReloc, CBuildCap };
+
 // For --discard-{all,locals,none}.
 enum class DiscardPolicy { Default, All, Locals, None };
 
@@ -120,6 +122,7 @@ struct Configuration {
                   uint64_t>
       CallGraphProfile;
   bool AllowMultipleDefinition;
+  bool AllowUndefinedCapRelocs = false;
   bool AndroidPackDynRelocs;
   bool ARMHasBlx = false;
   bool ARMHasMovtMovw = false;
@@ -160,9 +163,11 @@ struct Configuration {
   bool Pie;
   bool PrintGcSections;
   bool PrintIcfSections;
+  bool ProcessCapRelocs = false;
   bool Relocatable;
   bool RelrPackDynRelocs;
   bool SaveTemps;
+  bool SortCapRelocs;
   bool SingleRoRx;
   bool Shared;
   bool Static = false;
@@ -174,6 +179,7 @@ struct Configuration {
   bool TocOptimize;
   bool UndefinedVersion;
   bool UseAndroidRelrTags = false;
+  bool VerboseCapRelocs = false;
   bool WarnBackrefs;
   bool WarnCommon;
   bool WarnIfuncTextrel;
@@ -204,6 +210,11 @@ struct Configuration {
   StripPolicy Strip;
   UnresolvedPolicy UnresolvedSymbols;
   Target2Policy Target2;
+  // Method used for capability relocations for preemptible symbols
+  CapRelocsMode PreemptibleCapRelocsMode;
+  // Method used for capability relocations for non-preemptible symbols
+  CapRelocsMode LocalCapRelocsMode;
+
   ARMVFPArgKind ARMVFPArgs = ARMVFPArgKind::Default;
   BuildIdKind BuildId = BuildIdKind::None;
   ELFKind EKind = ELFNoneKind;
@@ -273,6 +284,28 @@ struct Configuration {
 
   // 4 for ELF32, 8 for ELF64.
   int Wordsize;
+
+  // Size of a CHERI capability
+  int CapabilitySize = 0;
+
+  inline bool isCheriABI() const { return MipsCheriAbi; }
+  // We need to set the searchPaths before createFiles() is called since linker
+  // scripts might contain INPUT() commands. Add a getter and setter for
+  // MipsCheriAbi to ensure this is always the case
+  inline void setIsCheriABI(bool Set) {
+    if (!Set)
+      return;
+    MipsCheriAbi = true;
+    if (DynamicLinker.empty())
+      DynamicLinker = "/libexec/ld-cheri-elf.so.1";
+    // add the default search paths for CheriABI
+    SearchPaths.emplace_back("=/libcheri");
+    SearchPaths.emplace_back("=/usr/libcheri");
+    SearchPaths.emplace_back("=/usr/local/libcheri");
+  }
+
+private:
+  bool MipsCheriAbi = false;
 };
 
 // The only instance of Configuration struct.

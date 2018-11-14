@@ -45,6 +45,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Transforms/CHERICap.h"
 #include "llvm/Transforms/Coroutines.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
@@ -159,6 +160,17 @@ private:
   const CodeGenOptions &CGOpts;
   const LangOptions &LangOpts;
 };
+}
+
+static void addCHERICapDirectCallsPass(const PassManagerBuilder &Builder,
+        PassManagerBase &PM) {
+  PM.add(createCHERICapDirectCallsPass());
+}
+
+static void addCHERICapFoldIntrinsicsPass(const PassManagerBuilder &Builder,
+        PassManagerBase &PM) {
+  if (Builder.OptLevel > 0)
+    PM.add(createCHERICapFoldIntrinsicsPass());
 }
 
 static void addObjCARCAPElimPass(const PassManagerBuilder &Builder, PassManagerBase &PM) {
@@ -530,6 +542,9 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
     bool InsertLifetimeIntrinsics = (CodeGenOpts.OptimizationLevel != 0 &&
                                      !CodeGenOpts.DisableLifetimeMarkers);
     PMBuilder.Inliner = createAlwaysInlinerLegacyPass(InsertLifetimeIntrinsics);
+    if (!llvm::MCTargetOptions::cheriUsesCapabilityTable())
+      PMBuilder.addExtension(PassManagerBuilder::EP_EarlyAsPossible,
+                             addCHERICapDirectCallsPass);
   } else {
     // We do not want to inline hot callsites for SamplePGO module-summary build
     // because profile annotation will happen again in ThinLTO backend, and we
@@ -570,6 +585,15 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
                            addObjCARCOptPass);
   }
+  if (!llvm::MCTargetOptions::cheriUsesCapabilityTable())
+    PMBuilder.addExtension(PassManagerBuilder::EP_EarlyAsPossible,
+                           addCHERICapDirectCallsPass);
+  PMBuilder.addExtension(PassManagerBuilder::EP_ModuleOptimizerEarly,
+                         addCHERICapFoldIntrinsicsPass);
+  PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
+                         addCHERICapFoldIntrinsicsPass);
+  PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                         addCHERICapFoldIntrinsicsPass);
 
   if (LangOpts.CoroutinesTS)
     addCoroutinePassesToExtensionPoints(PMBuilder);

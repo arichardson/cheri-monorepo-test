@@ -15,6 +15,8 @@ import re
 import subprocess
 import sys
 
+from libcxx.util import executeCommand
+
 class DefaultTargetInfo(object):
     def __init__(self, full_config):
         self.full_config = full_config
@@ -46,7 +48,7 @@ def test_locale(loc):
         locale.setlocale(locale.LC_ALL, default_locale)
 
 
-def add_common_locales(features, lit_config, is_windows=False):
+def add_common_locales(features, lit_config, is_windows=False, unchecked_add=False):
     # A list of locales needed by the test-suite.
     # The list uses the canonical name for the locale used in the test-suite
     # TODO: On Linux ISO8859 *may* needs to hyphenated.
@@ -60,7 +62,7 @@ def add_common_locales(features, lit_config, is_windows=False):
     ]
     for loc_id, windows_loc_name in locales:
         loc_name = windows_loc_name if is_windows else loc_id
-        if test_locale(loc_name):
+        if unchecked_add or test_locale(loc_name):
             features.add('locale.{0}'.format(loc_id))
         else:
             lit_config.warning('The locale {0} is not supported by '
@@ -127,14 +129,13 @@ class DarwinLocalTI(DefaultTargetInfo):
             cmd = ['xcrun', '--sdk', name, '--show-sdk-path']
         else:
             cmd = ['xcrun', '--show-sdk-path']
-        try:
-            out = subprocess.check_output(cmd).strip()
-            res = 0
-        except OSError:
-            res = -1
-        if res == 0 and out:
-            sdk_path = out
+        out, err, exit_code = executeCommand(cmd)
+        if exit_code != 0:
+            self.full_config.lit_config.warning("Could not determine macOS SDK path! stderr was " + err)
+        if exit_code == 0 and out:
+            sdk_path = out.strip()
             self.full_config.lit_config.note('using SDKROOT: %r' % sdk_path)
+            assert isinstance(sdk_path, str)
             flags += ["-isysroot", sdk_path]
 
     def add_cxx_link_flags(self, flags):
@@ -180,6 +181,33 @@ class FreeBSDLocalTI(DefaultTargetInfo):
     def add_cxx_link_flags(self, flags):
         flags += ['-lc', '-lm', '-lpthread', '-lgcc_s', '-lcxxrt']
 
+
+class CheriBSDRemoteTI(DefaultTargetInfo):
+    def __init__(self, full_config):
+        super(CheriBSDRemoteTI, self).__init__(full_config)
+
+    def platform(self):
+        return 'freebsd'
+
+    def add_cxx_link_flags(self, flags):
+        flags += ['-lc', '-lm', '-lpthread', '-lcompiler_rt', '-fuse-ld=lld',
+                  '-static', '-B' + self.full_config.get_lit_conf('sysroot') + '/../bin']
+        # For now assume that building with cheri triple implies purecap
+        # We may want to test hybrid in the future but for now we only build mips64 and cheri
+        if self.full_config.get_lit_conf('target_triple').startswith("cheri-"):
+            flags += ['-mabi=purecap']
+
+    def add_cxx_compile_flags(self, flags):
+        # we currently only support static linking so we need to add _LIBCPP_BUILD_STATIC
+        flags += ["-G0", "-msoft-float", "-D_LIBCPP_BUILD_STATIC"]
+        if self.full_config.get_lit_conf('target_triple').startswith("cheri-"):
+            flags += ['-mabi=purecap']
+
+    # def configure_env(self, env): pass
+    def allow_cxxabi_link(self):
+        return False # should either be included or using libcxxrt
+    # def add_sanitizer_features(self, sanitizer_type, features): pass
+    # def use_lit_shell_default(self): return False
 
 class LinuxLocalTI(DefaultTargetInfo):
     def __init__(self, full_config):
@@ -265,6 +293,42 @@ class WindowsLocalTI(DefaultTargetInfo):
         # Default to the internal shell on Windows, as bash on Windows is
         # usually very slow.
         return True
+
+
+class BaremetalNewlibTI(DefaultTargetInfo):
+    def __init__(self, full_config):
+        super(BaremetalNewlibTI, self).__init__(full_config)
+
+    def platform(self):
+        return 'baremetal-' + self.full_config.config.target_triple
+
+    def add_locale_features(self, features):
+        add_common_locales(features, self.full_config.lit_config, unchecked_add=True)
+
+    def add_cxx_compile_flags(self, flags):
+        # I'm not sure the _LIBCPP_BUILD_STATIC should be passed when building
+        # against libcpp but it seems to be needed
+        flags += ['-D_GNU_SOURCE', '-D_LIBCPP_BUILD_STATIC']
+        # For now always build with debug info:
+        flags.append('-g')
+        pass
+
+    def add_cxx_link_flags(self, flags):
+        llvm_unwinder = self.full_config.get_lit_bool('llvm_unwinder', False)
+        use_exceptions = self.full_config.get_lit_bool('enable_exceptions', False)
+        # shared_libcxx = self.full_config.get_lit_bool('enable_shared', False)
+        flags += ['-static', '-lm', '-lc']
+        enable_threads = ('libcpp-has-no-threads' not in self.full_config.config.available_features)
+        if enable_threads:
+            pass
+            # flags += ['-lpthread']
+            # if not shared_libcxx:
+            #  flags += ['-lrt']
+        if use_exceptions:
+            flags += ['-lunwind', '-ldl'] if llvm_unwinder else ['-lgcc_s']
+        use_libatomic = self.full_config.get_lit_bool('use_libatomic', False)
+        if use_libatomic:
+            flags += ['-latomic']
 
 
 def make_target_info(full_config):

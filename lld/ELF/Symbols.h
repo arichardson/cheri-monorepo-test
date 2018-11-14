@@ -27,6 +27,8 @@ class InputFile;
 } // namespace elf
 
 std::string toString(const elf::Symbol &);
+template<class ELFT>
+std::string verboseToString(elf::Symbol *B, uint64_t SymOffset = 0);
 std::string toString(const elf::InputFile *);
 
 namespace elf {
@@ -115,6 +117,8 @@ public:
   // executables, by most symbols in DSOs and executables built with
   // --export-dynamic, and by dynamic lists.
   unsigned ExportDynamic : 1;
+  // XXXAR: This is a hack to force exporting internal symbols
+  unsigned ForceExportDynamic : 1;
 
   // False if LTO shouldn't inline whatever this symbol points to. If a symbol
   // is overwritten after LTO, LTO shouldn't inline the symbol because it
@@ -177,8 +181,8 @@ protected:
       : File(File), NameData(Name.Data), NameSize(Name.Size), Binding(Binding),
         Type(Type), StOther(StOther), SymbolKind(K), NeedsPltAddr(false),
         IsInIplt(false), IsInIgot(false), IsPreemptible(false),
-        Used(!Config->GcSections), NeedsTocRestore(false),
-        ScriptDefined(false) {}
+        Used(!Config->GcSections), IsSectionStartSymbol(false),
+        NeedsTocRestore(false), ScriptDefined(false) {}
 
 public:
   // True the symbol should point to its PLT entry.
@@ -196,6 +200,11 @@ public:
 
   // True if an undefined or shared symbol is used from a live section.
   unsigned Used : 1;
+
+  // True if the linker should set the size of this symbol to be the size of the
+  // section it references. For compatibility reason this is only used when
+  // building for CHERI
+  unsigned IsSectionStartSymbol : 1;
 
   // True if a call to this symbol needs to be followed by a restore of the
   // PPC64 toc pointer.
@@ -346,6 +355,10 @@ struct ElfSym {
   static Defined *MipsGpDisp;
   static Defined *MipsLocalGp;
 
+  // The _CHERI_CAPABILITY_TABLE_ symbol points to the beginning of the
+  // .cap_table section
+  static Defined *CheriCapabilityTable;
+
   // __rela_iplt_end or __rel_iplt_end
   static Defined *RelaIpltEnd;
 
@@ -386,6 +399,7 @@ void replaceSymbol(Symbol *S, ArgT &&... Arg) {
   S->Visibility = Sym.Visibility;
   S->IsUsedInRegularObj = Sym.IsUsedInRegularObj;
   S->ExportDynamic = Sym.ExportDynamic;
+  S->ForceExportDynamic = Sym.ForceExportDynamic;
   S->CanInline = Sym.CanInline;
   S->Traced = Sym.Traced;
   S->ScriptDefined = Sym.ScriptDefined;

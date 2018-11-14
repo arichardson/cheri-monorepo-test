@@ -224,6 +224,61 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   # return UNW_ESUCCESS
   or    $2, $0, $0
   .set pop
+END_LIBUNWIND_FUNCTION(unw_getcontext)
+
+#elif defined(__mips__) && defined(__CHERI_PURE_CAPABILITY__)
+
+#if !defined(__mips_soft_float)
+#error "Only soft float supported"
+#endif
+
+.set noreorder
+#
+# extern int unw_getcontext(unw_context_t* thread_state)
+#
+# On entry:
+#  thread_state pointer is in $c3
+#
+# This is always called from ABI C code, so we only need to initialise the
+# registers that are preserved across calls
+
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
+#define SAVE_GPR(x) csd $x, $zero, (8*x)($c3)
+  SAVE_GPR(16) # $s0
+  SAVE_GPR(17) # $s1
+  SAVE_GPR(18) # $s2
+  SAVE_GPR(19) # $s3
+  SAVE_GPR(20) # $s4
+  SAVE_GPR(21) # $s5
+  SAVE_GPR(22) # $s6
+  SAVE_GPR(23) # $s7
+  SAVE_GPR(28) # $gp
+  SAVE_GPR(29) # $sp
+  SAVE_GPR(30) # $fp
+  # Offset of the start of the capability register set
+  daddiu $1, $zero, 64*8
+#define SAVE_CAP_REG(src, x) csc $c ## src, $1, (x * _MIPS_SZCAP/8)($c3)
+#define SAVE_CAP(x) SAVE_CAP_REG(x, x)
+  // Use $c12 as a temp register in order to save it $ddc since $c12 will hold
+  // the cap for unw_getcontext and it doesn't make sense to save it
+  cgetdefault $c12
+  SAVE_CAP_REG(12, 0)
+  SAVE_CAP(11)
+  SAVE_CAP(17)
+  SAVE_CAP(18)
+  SAVE_CAP(19)
+  SAVE_CAP(20)
+  SAVE_CAP(21)
+  SAVE_CAP(22)
+  SAVE_CAP(23)
+  SAVE_CAP(24)
+  daddiu $1, $1, 32*_MIPS_SZCAP/8
+  // return UNW_ESUCCESS
+  daddiu $v0, $zero, 0
+  # Store the return address where we expect the current PC
+  cjr $c17
+  csc $c17, $1, 0($c3)
+END_LIBUNWIND_FUNCTION(unw_getcontext)
 
 #elif defined(__mips64)
 
@@ -314,6 +369,7 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   # return UNW_ESUCCESS
   or    $2, $0, $0
   .set pop
+END_LIBUNWIND_FUNCTION(unw_getcontext)
 
 # elif defined(__mips__)
 
@@ -323,6 +379,7 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
 # Just trap for the time being.
 DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   teq $0, $0
+END_LIBUNWIND_FUNCTION(unw_getcontext)
 
 #elif defined(__powerpc64__)
 

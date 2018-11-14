@@ -699,8 +699,8 @@ static llvm::Value *EmitCXXNewAllocSize(CodeGenFunction &CGF,
   // Emit the array size expression.
   // We multiply the size of all dimensions for NumElements.
   // e.g for 'int[2][3]', ElemType is 'int' and NumElements is 6.
-  numElements =
-    ConstantEmitter(CGF).tryEmitAbstract(e->getArraySize(), e->getType());
+  numElements = ConstantEmitter(CGF).tryEmitAbstract(
+      e->getArraySize(), e->getArraySize()->getType());
   if (!numElements)
     numElements = CGF.EmitScalarExpr(e->getArraySize());
   assert(isa<llvm::IntegerType>(numElements->getType()));
@@ -2123,7 +2123,8 @@ static llvm::Value *EmitTypeidFromVTable(CodeGenFunction &CGF, const Expr *E,
 
 llvm::Value *CodeGenFunction::EmitCXXTypeidExpr(const CXXTypeidExpr *E) {
   llvm::Type *StdTypeInfoPtrTy =
-    ConvertType(E->getType())->getPointerTo();
+    ConvertType(E->getType())->getPointerTo(
+      CGM.getTargetCodeGenInfo().getDefaultAS());
 
   if (E->isTypeOperand()) {
     llvm::Constant *TypeInfo =
@@ -2268,4 +2269,21 @@ void CodeGenFunction::EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Slot) {
       EmitInitializerForField(*CurField, LV, *i);
     }
   }
+}
+
+llvm::Value *
+CodeGenFunction::EmitCXXMemberPointerAddressOf(const UnaryOperator *uo) {
+  // Member pointer constants always have a very particular form.
+  const MemberPointerType *type = cast<MemberPointerType>(uo->getType());
+  const ValueDecl *decl = cast<DeclRefExpr>(uo->getSubExpr())->getDecl();
+
+  // A member function pointer.
+  // We have to be
+  if (const CXXMethodDecl *method = dyn_cast<CXXMethodDecl>(decl))
+    return CGM.getCXXABI().EmitNonGlobalMemberFunctionPointer(*this, method);
+
+  // Otherwise, a member data pointer.
+  uint64_t fieldOffset = getContext().getFieldOffset(decl);
+  CharUnits chars = getContext().toCharUnitsFromBits((int64_t) fieldOffset);
+  return CGM.getCXXABI().EmitMemberDataPointer(type, chars);
 }

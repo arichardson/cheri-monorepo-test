@@ -105,6 +105,7 @@ public:
   RelType TlsGotRel;
   RelType TlsModuleIndexRel;
   RelType TlsOffsetRel;
+  llvm::Optional<RelType> AbsPointerRel; // TODO: remove the optional
   unsigned GotEntrySize = 0;
   unsigned GotPltEntrySize = 0;
   unsigned PltEntrySize;
@@ -131,6 +132,8 @@ public:
   // A 4-byte field corresponding to one or more trap instructions, used to pad
   // executable OutputSections.
   uint32_t TrapInstr = 0;
+  // NOP instruction used to pad .init/.fini sections
+  uint32_t NopInstr = 0;
 
   // If a target needs to rewrite calls to __morestack to instead call
   // __morestack_non_split when a split-stack enabled caller calls a

@@ -184,36 +184,42 @@ class _LIBUNWIND_HIDDEN LocalAddressSpace {
 public:
   typedef uintptr_t pint_t;
   typedef intptr_t  sint_t;
-  uint8_t         get8(pint_t addr) {
-    uint8_t val;
+#ifdef __CHERI_PURE_CAPABILITY__
+  typedef uint64_t addr_t;
+#elif defined(__LP64__)
+  typedef uint64_t addr_t;
+#else
+  typedef uint32_t addr_t;
+#endif
+  template<typename T>
+  inline T get(pint_t addr) {
+    T val;
+    addr = ddc_address(addr);
     memcpy(&val, (void *)addr, sizeof(val));
     return val;
+  }
+  uint8_t         get8(pint_t addr) {
+    return get<uint8_t>(addr);
   }
   uint16_t         get16(pint_t addr) {
-    uint16_t val;
-    memcpy(&val, (void *)addr, sizeof(val));
-    return val;
+    return get<uint16_t>(addr);
   }
   uint32_t         get32(pint_t addr) {
-    uint32_t val;
-    memcpy(&val, (void *)addr, sizeof(val));
-    return val;
+    return get<uint32_t>(addr);
   }
   uint64_t         get64(pint_t addr) {
-    uint64_t val;
-    memcpy(&val, (void *)addr, sizeof(val));
-    return val;
+    return get<uint64_t>(addr);
   }
   double           getDouble(pint_t addr) {
-    double val;
-    memcpy(&val, (void *)addr, sizeof(val));
-    return val;
+    return get<double>(addr);
   }
   v128             getVector(pint_t addr) {
-    v128 val;
-    memcpy(&val, (void *)addr, sizeof(val));
-    return val;
+    return get<v128>(addr);
   }
+  addr_t           getAddr(pint_t addr) {
+    return get<addr_t>(addr);
+  }
+  __attribute__((always_inline))
   uintptr_t       getP(pint_t addr);
   uint64_t        getRegister(pint_t addr);
   static uint64_t getULEB128(pint_t &addr, pint_t end);
@@ -230,11 +236,7 @@ public:
 };
 
 inline uintptr_t LocalAddressSpace::getP(pint_t addr) {
-#if __SIZEOF_POINTER__ == 8
-  return get64(addr);
-#else
-  return get32(addr);
-#endif
+  return get<uintptr_t>(addr);
 }
 
 inline uint64_t LocalAddressSpace::getRegister(pint_t addr) {
@@ -301,8 +303,8 @@ LocalAddressSpace::getEncodedP(pint_t &addr, pint_t end, uint8_t encoding,
   // first get value
   switch (encoding & 0x0F) {
   case DW_EH_PE_ptr:
-    result = getP(addr);
-    p += sizeof(pint_t);
+    result = getAddr(addr);
+    p += sizeof(addr_t);
     addr = (pint_t) p;
     break;
   case DW_EH_PE_uleb128:
@@ -378,9 +380,10 @@ LocalAddressSpace::getEncodedP(pint_t &addr, pint_t end, uint8_t encoding,
   }
 
   if (encoding & DW_EH_PE_indirect)
-    result = getP(result);
+    result = getAddr(pcc_address(result));
 
-  return result;
+  // FIXME: Is this always PCC-relative?
+  return pcc_address(result);
 }
 
 inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
@@ -474,6 +477,7 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
   };
 
   dl_iterate_cb_data cb_data = {this, &info, targetAddr};
+  using vaddr_t = size_t;
   int found = dl_iterate_phdr(
       [](struct dl_phdr_info *pinfo, size_t, void *data) -> int {
         auto cbdata = static_cast<dl_iterate_cb_data *>(data);
@@ -514,20 +518,20 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
         for (Elf_Half i = 0; i < pinfo->dlpi_phnum; i++) {
           const Elf_Phdr *phdr = &pinfo->dlpi_phdr[i];
           if (phdr->p_type == PT_LOAD) {
-            uintptr_t begin = pinfo->dlpi_addr + phdr->p_vaddr;
+	    uintptr_t begin = pcc_address(pinfo->dlpi_addr + phdr->p_vaddr);
+            uintptr_t end = pcc_address(begin + phdr->p_memsz);
 #if defined(__ANDROID__)
             if (pinfo->dlpi_addr == 0 && phdr->p_vaddr < image_base)
               begin = begin + image_base;
 #endif
-            uintptr_t end = begin + phdr->p_memsz;
-            if (cbdata->targetAddr >= begin && cbdata->targetAddr < end) {
+            if ((vaddr_t)cbdata->targetAddr >= (vaddr_t)begin && (vaddr_t)cbdata->targetAddr < (vaddr_t)end) {
               cbdata->sects->dso_base = begin;
               object_length = phdr->p_memsz;
               found_obj = true;
             }
           } else if (phdr->p_type == PT_GNU_EH_FRAME) {
             EHHeaderParser<LocalAddressSpace>::EHHeaderInfo hdrInfo;
-            uintptr_t eh_frame_hdr_start = pinfo->dlpi_addr + phdr->p_vaddr;
+            uintptr_t eh_frame_hdr_start = ddc_address(pinfo->dlpi_addr + phdr->p_vaddr);
 #if defined(__ANDROID__)
             if (pinfo->dlpi_addr == 0 && phdr->p_vaddr < image_base)
               eh_frame_hdr_start = eh_frame_hdr_start + image_base;

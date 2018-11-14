@@ -74,7 +74,11 @@ public:
   };
   struct RegisterLocation {
     RegisterSavedWhere location;
+#ifdef __CHERI_PURE_CAPABILITY__
+    intptr_t value;
+#else
     int64_t value;
+#endif
   };
   /// Information about a frame layout and registers saved determined
   /// by "running" the DWARF FDE "instructions"
@@ -298,6 +302,11 @@ const char *CFI_Parser<A>::parseCIE(A &addressSpace, pint_t cie,
   uint64_t raReg = addressSpace.getULEB128(p, cieContentEnd);
   assert(raReg < 255 && "return address register too large");
   cieInfo->returnAddressRegister = (uint8_t)raReg;
+#ifdef __CHERI_PURE_CAPABILITY__
+  // FIXME: This is entirely wrong, but for some reason we get the wrong value
+  // from the compiler-generated DWARF
+  cieInfo->returnAddressRegister = (uint8_t)UNW_MIPS_C17;
+#endif
   // parse augmentation data based on augmentation string
   const char *result = NULL;
   if (addressSpace.get8(strStart) == 'z') {
@@ -558,9 +567,8 @@ bool CFI_Parser<A>::parseInstructions(A &addressSpace, pint_t instructions,
       assert(length < static_cast<pint_t>(~0) && "pointer overflow");
       p += static_cast<pint_t>(length);
       _LIBUNWIND_TRACE_DWARF("DW_CFA_expression(reg=%" PRIu64 ", "
-                             "expression=0x%" PRIx64 ", "
-                             "length=%" PRIu64 ")\n",
-                             reg, results->savedRegisters[reg].value, length);
+                             "expression=%p, length=%" PRIu64 ")\n",
+                             reg, (void*)results->savedRegisters[reg].value, length);
       break;
     case DW_CFA_offset_extended_sf:
       reg = addressSpace.getULEB128(p, instructionsEnd);
@@ -644,8 +652,8 @@ bool CFI_Parser<A>::parseInstructions(A &addressSpace, pint_t instructions,
       assert(length < static_cast<pint_t>(~0) && "pointer overflow");
       p += static_cast<pint_t>(length);
       _LIBUNWIND_TRACE_DWARF("DW_CFA_val_expression(reg=%" PRIu64 ", "
-                             "expression=0x%" PRIx64 ", length=%" PRIu64 ")\n",
-                             reg, results->savedRegisters[reg].value, length);
+                             "expression=%p, length=%" PRIu64 ")\n",
+                             reg, (void*)results->savedRegisters[reg].value, length);
       break;
     case DW_CFA_GNU_args_size:
       length = addressSpace.getULEB128(p, instructionsEnd);

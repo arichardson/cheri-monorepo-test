@@ -82,7 +82,7 @@ OutputSection::OutputSection(StringRef Name, uint32_t Type, uint64_t Flags)
 static bool canMergeToProgbits(unsigned Type) {
   return Type == SHT_NOBITS || Type == SHT_PROGBITS || Type == SHT_INIT_ARRAY ||
          Type == SHT_PREINIT_ARRAY || Type == SHT_FINI_ARRAY ||
-         Type == SHT_NOTE;
+         Type == SHT_NOTE || Type == SHT_MIPS_DWARF;  // XXXAR: Old GCC emits SHT_MIPS_DWARF this for .debug_* sections...
 }
 
 void OutputSection::addSection(InputSection *IS) {
@@ -236,9 +236,9 @@ template <class ELFT> void OutputSection::writeTo(uint8_t *Buf) {
 
   // Write leading padding.
   std::vector<InputSection *> Sections = getInputSections(this);
-  uint32_t Filler = getFiller();
+  llvm::Optional<uint32_t> Filler = getFiller();
   if (Filler)
-    fill(Buf, Sections.empty() ? Size : Sections[0]->OutSecOff, Filler);
+    fill(Buf, Sections.empty() ? Size : Sections[0]->OutSecOff, *Filler);
 
   parallelForEachN(0, Sections.size(), [&](size_t I) {
     InputSection *IS = Sections[I];
@@ -252,7 +252,7 @@ template <class ELFT> void OutputSection::writeTo(uint8_t *Buf) {
         End = Buf + Size;
       else
         End = Buf + Sections[I + 1]->OutSecOff;
-      fill(Start, End - Start, Filler);
+      fill(Start, End - Start, *Filler);
     }
   });
 
@@ -406,12 +406,17 @@ void OutputSection::sortInitFini() {
   sort([](InputSectionBase *S) { return getPriority(S->Name); });
 }
 
-uint32_t OutputSection::getFiller() {
+llvm::Optional<uint32_t> OutputSection::getFiller() {
   if (Filler)
     return *Filler;
-  if (Flags & SHF_EXECINSTR)
+  if (Flags & SHF_EXECINSTR) {
+    // .init and .fini are run from start to end, so we need to pad it with nops
+    // instead of trap instructions
+    if (Name == ".init" || Name == ".fini")
+      return Target->NopInstr;
     return Target->TrapInstr;
-  return 0;
+  }
+  return None;
 }
 
 template void OutputSection::writeHeaderTo<ELF32LE>(ELF32LE::Shdr *Shdr);

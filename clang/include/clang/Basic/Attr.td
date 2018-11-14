@@ -1771,6 +1771,49 @@ def Packed : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+// CHERI-related attributes
+
+def CHERICapability : TypeAttr {
+  let Spellings = [GNU<"cheri_capability">];
+  let Documentation = [Undocumented];
+}
+def MemoryAddress : TypeAttr {
+  let Spellings = [GNU<"memory_address">, CXX11<"cheri","memory_address">];
+  let Documentation = [Undocumented];
+}
+
+def PointerInterpretationCaps : DeclOrTypeAttr { // InheritableAttr {
+  let Spellings = [GNU<"pointer_interpretation_capabilities">];
+  let Documentation = [Undocumented];
+}
+
+def CHERICCall : DeclOrTypeAttr { // InheritableAttr {
+  let Spellings = [GNU<"cheri_ccall">];
+  let Documentation = [Undocumented];
+}
+
+def CHERICCallee : DeclOrTypeAttr { // InheritableAttr {
+  let Spellings = [GNU<"cheri_ccallee">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def CHERICCallback : DeclOrTypeAttr { // InheritableAttr {
+  let Spellings = [GNU<"cheri_ccallback">];
+  let Documentation = [Undocumented];
+}
+
+def CHERIMethodSuffix : DeclOrTypeAttr { // InheritableAttr {
+  let Spellings = [GNU<"cheri_method_suffix">];
+  let Documentation = [Undocumented];
+  let Args = [StringArgument<"Suffix">];
+}
+def CHERIMethodClass : DeclOrTypeAttr { // InheritableAttr {
+  let Spellings = [GNU<"cheri_method_class">];
+  let Documentation = [Undocumented];
+  let Args = [IdentifierArgument<"DefaultClass">];
+}
+
 def IntelOclBicc : DeclOrTypeAttr {
   let Spellings = [Clang<"intel_ocl_bicc", 0>];
 //  let Subjects = [Function, ObjCMethod];
@@ -1886,6 +1929,11 @@ def Sentinel : InheritableAttr {
   let Args = [DefaultIntArgument<"Sentinel", 0>,
               DefaultIntArgument<"NullPos", 0>];
 //  let Subjects = SubjectList<[Function, ObjCMethod, Block, Var]>;
+  let Documentation = [Undocumented];
+}
+
+def Sensitive : InheritableAttr {
+  let Spellings = [GNU<"sensitive">];
   let Documentation = [Undocumented];
 }
 

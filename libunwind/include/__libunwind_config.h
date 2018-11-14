@@ -23,6 +23,7 @@
 #define _LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM       287
 #define _LIBUNWIND_HIGHEST_DWARF_REGISTER_OR1K      32
 #define _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS      65
+#define _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS_CHERI 103
 
 #if defined(_LIBUNWIND_IS_NATIVE_ONLY)
 # if defined(__i386__)
@@ -87,6 +88,13 @@
 #      define _LIBUNWIND_CONTEXT_SIZE 18
 #      define _LIBUNWIND_CURSOR_SIZE 24
 #    endif
+#  elif defined(__CHERI_PURE_CAPABILITY__)
+#   ifdef __mips_hard_float
+#    error "not supported yet"
+#   endif
+#   define _LIBUNWIND_TARGET_MIPS_CHERI 1
+#   define _LIBUNWIND_CONTEXT_SIZE (32+32+33*(_MIPS_SZCAP/64))
+#   define _LIBUNWIND_CURSOR_SIZE (_LIBUNWIND_CONTEXT_SIZE+12*(_MIPS_SZCAP/64))
 #  elif defined(_ABIN32) && _MIPS_SIM == _ABIN32
 #    define _LIBUNWIND_TARGET_MIPS_NEWABI 1
 #    if defined(__mips_hard_float)
@@ -108,7 +116,11 @@
 #  else
 #    error "Unsupported MIPS ABI and/or environment"
 #  endif
-#  define _LIBUNWIND_HIGHEST_DWARF_REGISTER _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS
+#  ifdef __CHERI_PURE_CAPABILITY__
+#   define _LIBUNWIND_HIGHEST_DWARF_REGISTER _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS_CHERI
+#  else
+#   define _LIBUNWIND_HIGHEST_DWARF_REGISTER _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS
+#  endif
 # else
 #  error "Unsupported architecture."
 # endif
@@ -120,6 +132,7 @@
 # define _LIBUNWIND_TARGET_AARCH64 1
 # define _LIBUNWIND_TARGET_ARM 1
 # define _LIBUNWIND_TARGET_OR1K 1
+# define _LIBUNWIND_TARGET_MIPS_CHERI 1
 # define _LIBUNWIND_TARGET_MIPS_O32 1
 # define _LIBUNWIND_TARGET_MIPS_NEWABI 1
 # define _LIBUNWIND_CONTEXT_SIZE 167
